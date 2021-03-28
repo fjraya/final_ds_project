@@ -32,6 +32,7 @@ There are a lot of text, so I have reduced corpus size and filtering some words.
 
 ## Algorithm used
 
+* Probabilites are calculated with [Markov property](https://www.ee.ryerson.ca/~courses/ee8103/chap5.pdf) and [MLE estimation](https://leimao.github.io/blog/Maximum-Likelihood-Estimation-Ngram/).
 * I have used [Katzs Backoff](https://en.wikipedia.org/wiki/Katz%27s_back-off_model) with precalculated [Good Turing discount](https://en.wikipedia.org/wiki/Good%E2%80%93Turing_frequency_estimation) stored in every ngram column.
 * Using this algorithm, I manage unseen ngram words.
 * When no ngram matches with input, I return most frequent word.

@@ -3157,6 +3157,7 @@ slide:not(.current) .plotly.html-widget{
 </article></slide><slide class=""><hgroup><h2>Algorithm used</h2></hgroup><article  id="algorithm-used">
 
 <ul>
+<li>Probabilites are calculated with <a href='https://www.ee.ryerson.ca/~courses/ee8103/chap5.pdf' title=''>Markov property</a> and <a href='https://leimao.github.io/blog/Maximum-Likelihood-Estimation-Ngram/' title=''>MLE estimation</a>.</li>
 <li>I have used <a href='https://en.wikipedia.org/wiki/Katz%27s_back-off_model' title=''>Katzs Backoff</a> with precalculated <a href='https://en.wikipedia.org/wiki/Good%E2%80%93Turing_frequency_estimation' title=''>Good Turing discount</a> stored in every ngram column.</li>
 <li>Using this algorithm, I manage unseen ngram words.</li>
 <li>When no ngram matches with input, I return most frequent word.</li>

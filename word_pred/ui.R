@@ -17,6 +17,7 @@ shinyUI(fluidPage(
                         sidebarLayout(
                             sidebarPanel(
                                 helpText("Enter almost three words to predict next"),
+                                helpText("Please, wait until three blank predictions appears on the right panel."),
                                 textInput("source", "Enter first words...",value = "")
                                 
                             ),
