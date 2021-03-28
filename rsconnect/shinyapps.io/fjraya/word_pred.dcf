@@ -1,0 +1,12 @@
+name: word_pred
+title: word_pred
+username:
+account: fjraya
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 3874991
+bundleId: 4404821
+url: https://fjraya.shinyapps.io/word_pred/
+when: 1616955609.92565
+asMultiple: FALSE
+asStatic: FALSE

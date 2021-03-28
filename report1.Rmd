@@ -1,0 +1,411 @@
+---
+title: "Milestone report"
+author: "Francisco Javier Raya"
+date: "3/15/2021"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning=FALSE, message=FALSE)
+```
+
+## Executive summary
+
+The goal of this project is just to display that I've gotten used to working with the data and that I am on track to create my prediction algorithm. I submit a report on R Pubs (http://rpubs.com/) that explains my exploratory analysis and my goals for the eventual app and algorithm. This document should be concise and explain only the major features of the data I have identified and briefly summarize my plans for creating the prediction algorithm and Shiny app in a way that would be understandable to a non-data scientist manager. I should make use of tables and plots to illustrate important summaries of the data set.
+
+The motivation for this project is to: 
+1. Demonstrate that I've downloaded the data and have successfully loaded it in.
+2. Create a basic report of summary statistics about the data sets.
+3. Report any interesting findings that I amassed so far.
+4. Get feedback on my plans for creating a prediction algorithm and Shiny app. 
+
+
+## Data
+
+### Loading data
+
+I get datasets and display some statistics (number of lines, etc...)
+
+```{r}
+library(knitr)
+en_blogs <- readLines("en_US.blogs.txt")
+en_news <- readLines("en_US.news.txt")
+en_twitter <- readLines("en_US.twitter.txt")
+
+summary_data <- data.frame(source = c("blogs", "news", "twitter"), lines = c(length(en_blogs), length(en_news), length(en_twitter)),
+                           size=c(format(object.size(en_blogs), units="MB"), 
+                                  format(object.size(en_news), units="MB"), 
+                                  format(object.size(en_twitter), units="MB")))
+
+
+head(summary_data)
+
+barplot(summary_data$lines ~summary_data$source, xlab ="source", ylab="lines")
+
+
+```
+
+
+I only take a subset of data sets to make cleaning and exploratory data analysis. I write them into separate files for repeated use.
+```{r}
+set.seed(1234)
+sample_en_blog <- sample(en_blogs, 2000)
+sample_en_twitter <- sample(en_twitter, 2000)
+sample_en_news <- sample(en_news, 2000)
+
+
+write.table(sample_en_blog, "sample_en_blog.txt", append = FALSE, sep = " ", dec = ".",
+            row.names = FALSE, col.names = FALSE)
+
+write.table(sample_en_twitter, "sample_en_twitter.txt", append = FALSE, sep = " ", dec = ".",
+            row.names = FALSE, col.names = FALSE)
+
+write.table(sample_en_news, "sample_en_news.txt", append = FALSE, sep = " ", dec = ".",
+            row.names = FALSE, col.names = FALSE)
+
+rm(en_blogs)
+rm(en_twitter)
+rm(en_news)
+```
+
+### Processing and cleaning data
+
+I generate a function to clean data. This function take and argument to determine if I filter stop words or not.
+
+```{r}
+
+library(tidytext)
+library(dplyr)
+data(stop_words)
+library(quanteda)
+profanity_words <- readLines('https://www.cs.cmu.edu/~biglou/resources/bad-words.txt')
+
+clean_text <- function(sentences, stop_word = TRUE) {
+    sentences <- tokens(sentences, remove_punct=TRUE, remove_numbers = TRUE, remove_separators = TRUE, remove_symbols = TRUE)
+    sentences = tokens_tolower(sentences)
+    
+    #if (stop_word == TRUE) sentences = tm_map(sentences, removeWords, stopwords("english"))
+    #sentences = tm_map(sentences, removeWords, profanity_words)
+    
+    sentences <- tokens_replace(sentences, c("”",  "‘", "’"), c("", "", ""))
+    return (sentences)
+}
+
+```
+
+I build two type of dataSets, one with stop words filtering and other without it.
+
+```{r}
+sample_en_all <- c(sample_en_blog, sample_en_twitter, sample_en_news)
+
+clean_without_stop_words <- clean_text(sample_en_all, TRUE)
+
+clean_stop_words <- clean_text(sample_en_all, FALSE)
+
+clean_blog_without_stop_words <- clean_text(sample_en_blog, TRUE)
+
+clean_blog_stop_words <- clean_text(sample_en_blog, FALSE)
+
+clean_twitter_without_stop_words <- clean_text(sample_en_twitter, TRUE)
+
+clean_twitter_stop_words <- clean_text(sample_en_twitter, FALSE)
+
+clean_news_without_stop_words <- clean_text(sample_en_news, TRUE)
+
+clean_news_stop_words <- clean_text(sample_en_news, FALSE)
+
+```
+### Exploratory data
+
+I divide this section in four points. I take sequences of 1, 2, 3 and 4 words and everyone is performed with stop words filtering and without.
+
+
+#### 1-Gram, word count.
+
+I explore word frequency by area and overall and show some plots. I build two functions to generate ngrams and plots.
+
+```{r}
+library(RWeka)
+library(ggplot2)
+rm(sample_en_all)
+rm(sample_en_blog)
+rm(sample_en_news)
+rm(sample_en_twitter)
+
+makeNGram <- function(data, ngram, sizeGram=15) {
+  gramTokenizer <- function(x) NGramTokenizer(x, Weka_control(min=ngram, max=ngram))
+  gram <- TermDocumentMatrix(data, control = list(tokenize = gramTokenizer))
+  freq <- sort(rowSums(as.matrix(gram)),decreasing = TRUE)
+  if (sizeGram != -1) return (data.frame(word=names(freq), freq=freq)[1:sizeGram, ])
+  return (data.frame(word=names(freq), freq=freq))
+}
+
+
+makeBarplot <- function(data, label) {
+  barplot(data[order(data[,2],decreasing=FALSE),][,2],names.arg=data[order(data[,2],decreasing=FALSE),][,1], xlab = 'word', ylab = '', 
+          main = label, horiz = TRUE, las = 1)
+}
+```
+
+```{r, echo=FALSE}
+
+ngram.blog.stop <- tokens_ngrams(clean_blog_stop_words, 1)
+ngram.blog.nostop <- makeNGram(clean_blog_without_stop_words, 1)
+
+ngram.news.stop <- makeNGram(clean_news_stop_words, 1)
+ngram.news.nostop <- makeNGram(clean_news_without_stop_words, 1)
+
+ngram.twitter.stop <- makeNGram(clean_twitter_stop_words, 1)
+ngram.twitter.nostop <- makeNGram(clean_twitter_without_stop_words, 1)
+
+ngram.all.stop <- makeNGram(clean_stop_words, 1)
+ngram.all.nostop <- makeNGram(clean_without_stop_words, 1)
+
+par(mfrow=c(1,2))
+makeBarplot(ngram.blog.stop, 'blog')
+makeBarplot(ngram.blog.nostop, 'blog with stop words')
+
+makeBarplot(ngram.news.stop, 'news')
+makeBarplot(ngram.news.nostop, 'news with stop words')
+
+makeBarplot(ngram.twitter.stop, 'twitter')
+makeBarplot(ngram.twitter.nostop, 'twitter with stop words')
+
+makeBarplot(ngram.all.stop, 'all')
+makeBarplot(ngram.all.nostop, 'all with stop words')
+
+
+par(mfrow=c(1,1))
+
+```
+
+Some conclusions:
+
+* Frequency of words depends on corpus area (blog, twitter, news or all of them)
+* Stop words are always more frequents than "normal" words. 
+* Perhaps is interesting remove stop words in certain situations to reduce memory and performance.
+
+
+#### BiGrams.
+
+```{r, echo=FALSE}
+
+ngram.blog.stop <- makeNGram(clean_blog_stop_words, 2)
+ngram.blog.nostop <- makeNGram(clean_blog_without_stop_words, 2)
+
+ngram.news.stop <- makeNGram(clean_news_stop_words, 2)
+ngram.news.nostop <- makeNGram(clean_news_without_stop_words, 2)
+
+ngram.twitter.stop <- makeNGram(clean_twitter_stop_words, 2)
+ngram.twitter.nostop <- makeNGram(clean_twitter_without_stop_words, 2)
+
+ngram.all.stop <- makeNGram(clean_stop_words, 2)
+ngram.all.nostop <- makeNGram(clean_without_stop_words, 2)
+
+par(mfrow=c(1,2), mar=c(5, 10, 4, 1))
+makeBarplot(ngram.blog.stop, 'blog')
+makeBarplot(ngram.blog.nostop, 'blog with sw')
+
+makeBarplot(ngram.news.stop, 'news')
+makeBarplot(ngram.news.nostop, 'news with sw')
+
+makeBarplot(ngram.twitter.stop, 'twitter')
+makeBarplot(ngram.twitter.nostop, 'twitter with sw')
+
+makeBarplot(ngram.all.stop, 'all')
+makeBarplot(ngram.all.nostop, 'all with sw')
+
+
+par(mfrow=c(1,1))
+```
+
+Conclusions:
+
+* Frequency of bigrams also depends on corpus area
+* Frequency aren't too big. Only combinations with stop words presents high values of frequency.
+* Stop words are relevant on bigrams. It's not clear that is good filter them.
+
+
+
+### Trigrams.
+
+
+```{r, echo=FALSE}
+
+ngram.blog.stop <- makeNGram(clean_blog_stop_words, 3)
+ngram.blog.nostop <- makeNGram(clean_blog_without_stop_words, 3)
+
+ngram.news.stop <- makeNGram(clean_news_stop_words, 3)
+ngram.news.nostop <- makeNGram(clean_news_without_stop_words, 3)
+
+ngram.twitter.stop <- makeNGram(clean_twitter_stop_words, 3)
+ngram.twitter.nostop <- makeNGram(clean_twitter_without_stop_words, 3)
+
+ngram.all.stop <- makeNGram(clean_stop_words, 3)
+ngram.all.nostop <- makeNGram(clean_without_stop_words, 3)
+
+par(mfrow=c(1,2), mar=c(5, 12, 4, 1))
+makeBarplot(ngram.blog.stop, 'blog')
+makeBarplot(ngram.blog.nostop, 'blog with sw')
+
+makeBarplot(ngram.news.stop, 'news')
+makeBarplot(ngram.news.nostop, 'news with sw')
+
+makeBarplot(ngram.twitter.stop, 'twitter')
+makeBarplot(ngram.twitter.nostop, 'twitter with sw')
+
+makeBarplot(ngram.all.stop, 'all')
+makeBarplot(ngram.all.nostop, 'all with sw')
+
+
+par(mfrow=c(1,1))
+
+
+```
+
+
+Conclusions:
+
+* Stop words are every time more important for the semantics of the ngram.
+* Frequency of ngrams decreases when size of them increases.
+* NGrams are high correlated with corpus area. Perhaps is interesting build a model for every theme (blogs, news, twitter and overall)
+
+
+### 4-Grams
+
+```{r, echo=FALSE}
+
+ngram.blog.stop <- makeNGram(clean_blog_stop_words, 4)
+ngram.blog.nostop <- makeNGram(clean_blog_without_stop_words, 4)
+
+ngram.news.stop <- makeNGram(clean_news_stop_words, 4)
+ngram.news.nostop <- makeNGram(clean_news_without_stop_words, 4)
+
+ngram.twitter.stop <- makeNGram(clean_twitter_stop_words, 4)
+ngram.twitter.nostop <- makeNGram(clean_twitter_without_stop_words, 4)
+
+ngram.all.stop <- makeNGram(clean_stop_words, 4)
+ngram.all.nostop <- makeNGram(clean_without_stop_words, 4)
+
+par(mfrow=c(1,2), mar=c(5, 15, 4, 1))
+makeBarplot(ngram.blog.stop, 'blog')
+makeBarplot(ngram.blog.nostop, 'blog+sw')
+
+makeBarplot(ngram.news.stop, 'news')
+makeBarplot(ngram.news.nostop, 'news+sw')
+
+makeBarplot(ngram.twitter.stop, 'twitter')
+makeBarplot(ngram.twitter.nostop, 'twit+sw')
+
+makeBarplot(ngram.all.stop, 'all')
+makeBarplot(ngram.all.nostop, 'all+sw')
+
+
+par(mfrow=c(1,1))
+
+
+```
+
+Conclusions
+
+* Stop words are necessary to connect expressions. 
+
+
+## Coverage analysis
+
+I'll try to determine how many words I need to cover 50% of word instances in the corpus. After I'll try to calculate to 90%.
+
+
+```{r}
+
+wordCoverage <- function(percent, data) {
+  ratio<-cumsum(data$freq)/sum(data$freq)
+  return (which(ratio>=percent)[1])
+}
+
+wordGram <- makeNGram(clean_without_stop_words, 1, -1)
+
+wordCoverage(0.5, wordGram)
+
+wordCoverage(0.9, wordGram)
+
+
+```
+I need 318 words to cover 50% of word instances in sample corpus. To cover 90%, I need 8107. 
+
+In the next plot, I show that relation between word instances and coverage is not linear. It's exponential.
+
+```{r}
+#plot percent vs num_words
+wordGram <- makeNGram(clean_without_stop_words, 1, -1)
+data <- data.frame(x=seq(0.1, 0.9, by=0.1), y=sapply(seq(0.1, 0.9, by=0.1), wordCoverage, wordGram))
+
+plot(data, type="l", xlab="coverage", ylab="words")
+
+```
+## Words in foreign languages
+
+I use a english word dictionary from [https://raw.githubusercontent.com/dwyl/english-words/master/words_alpha.txt] https://raw.githubusercontent.com/dwyl/english-words/master/words_alpha.txt.
+
+I determine how many words are present in corpus that aren't in this dictionary and give some examples.
+
+```{r}
+
+dict <- readLines("https://raw.githubusercontent.com/dwyl/english-words/master/words_alpha.txt")
+
+foreign_words <- wordGram[!wordGram$word %in% dict, ]
+
+foreign_count <- dim(foreign_words)
+
+total_word_count <- dim(wordGram)
+
+foreign_count[1] / total_word_count[1]
+
+```
+
+There are 24.5% of "foreign" words. I think this is a high ratio. If I examine words, most of them are named entities. I'll try to filter them by short way:
+
+```{r}
+
+ner.locations <- readLines("https://raw.githubusercontent.com/v-mipeng/LexiconNER/master/dictionary/conll2003/location.txt")
+ner.locations <- tolower(ner.locations)
+foreign_words <- foreign_words[!foreign_words$word %in% ner.locations, ]
+
+ner.organizations <- readLines("https://raw.githubusercontent.com/v-mipeng/LexiconNER/master/dictionary/conll2003/organization.txt")
+ner.organizations <- tolower(ner.organizations)
+
+foreign_words <- foreign_words[!foreign_words$word %in% ner.organizations, ]
+
+ner.person <- readLines("https://raw.githubusercontent.com/v-mipeng/LexiconNER/master/dictionary/conll2003/person.txt")
+ner.person <- tolower(ner.person)
+
+foreign_words <- foreign_words[!foreign_words$word %in% ner.person, ]
+
+```
+
+I reduce foreign words by 100 with trivial proper nouns filtering.
+
+
+## Increasing coverage
+
+
+Now, I only have two ideas to increase it:
+
+* Use of synonims and other relationships respect words in corpus. Perhaps using wordnet or similar resources.
+* Working with stemming. Not all derived forms of a words are in a corpus. 
+
+
+## Planning and future work
+
+* Study markov chain model with the purpose of reduce space and increase performance of the model.
+* There are a lot of words with frequency of 1, same as n-grams. Study impact of delete them in terms of space and accuracy (or some other evaluation method)
+* Use more sophisticated lexicons and Named Entity Recognitions algorithms.
+* Work with sentences and not with lines to generate ngrams.
+* Create a shiny app with input text to enter words and give three word prediction options. You can choose one of them.
+* Study the use of language detector to select correct ngrams.
+* Study the impact of stop words and intelligent use of them. (pe: ngrams that starts with stop words perhaps could not be considered).
+
+
+

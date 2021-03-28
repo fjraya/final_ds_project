@@ -1,0 +1,412 @@
+---
+title: "modeling2.Rmd"
+author: "Francisco Javier Raya"
+date: "3/23/2021"
+output: html_document
+---
+
+```{r cars}
+
+library(knitr)
+library(caret)
+en_blogs <- readLines("en_US.blogs.txt")
+en_news <- readLines("en_US.news.txt")
+en_twitter <- readLines("en_US.twitter.txt")
+
+generate_train_test <- function(data) {
+  set.seed(12345)
+  n_els <- length(data)
+  trainIndex <- sample(1:n_els, n_els * 0.99, replace = FALSE)
+  train <- data[trainIndex]
+  test <- data[-trainIndex]
+  return (list(train=train, test=test))
+}
+
+
+blogs_data <- generate_train_test(en_blogs)
+
+news_data <- generate_train_test(en_news)
+
+twitter_data <- generate_train_test(en_twitter)
+
+
+library(tidytext)
+library(dplyr)
+library(quanteda)
+quanteda_options(threads= 4)
+profanity_words <- readLines('https://www.cs.cmu.edu/~biglou/resources/bad-words.txt')
+
+
+clean_text <- function(sentences) {
+    sentences <- corpus(sentences)
+    sentences <- unlist(tokens(sentences, what="sentence", split_hyphens = TRUE, remove_punct  =TRUE, remove_symbols = TRUE, remove_numbers = TRUE, remove_separators = TRUE))
+    names(sentences) <- 1:length(sentences)
+    sentences <- tokens(sentences, split_hyphens = TRUE, remove_punct  = TRUE, remove_symbols = TRUE, remove_numbers = TRUE, remove_separators = TRUE)
+    sentences <- tokens_tolower(sentences)
+
+    
+    sentences <- tokens_replace(sentences, c("”",  "‘", "’", "#"), c("", "", "", ""))
+    sentences <- tokens_replace(sentences, "[^\x20-\x7E]", "")
+    sentences <- tokens_remove(sentences, pattern = "[0-9]+[a-z]", valuetype = "regex")
+    sentences <- tokens_select(sentences, profanity_words, selection = "remove", padding = FALSE)
+    return (sentences)
+}
+
+
+library(tokenizers)
+if (!file.exists("blogs.RDS")) {
+  clean_blogs <- clean_text(blogs_data$train)
+  names(clean_blogs) <- paste("blogs", seq(1:length(clean_blogs)), sep="")
+  saveRDS(clean_blogs, "blogs.RDS")
+  rm(en_blogs)
+}
+if (!file.exists("news.RDS")) {
+  clean_news <- clean_text(news_data$train)
+  names(clean_news) <- paste("news", seq(1:length(clean_news)), sep="")
+  saveRDS(clean_news, "news.RDS")
+  rm(en_news)
+}
+if (!file.exists("twitter.RDS")) {
+  clean_twitter <- clean_text(twitter_data$train)
+  names(clean_twitter) <- paste("twit", seq(1:length(clean_twitter)), sep="")
+  saveRDS(clean_twitter, "twitter.RDS")
+  rm(en_twitter)
+}
+
+```
+
+
+
+```{r}
+library(quanteda)
+library(dplyr)
+library(tidyr)
+library(data.table)
+quanteda_options(threads= 4)
+clean_blogs <- readRDS("blogs.RDS")
+clean_news <- readRDS("news.RDS")
+clean_twitter <- readRDS("twitter.RDS")
+
+
+makeNGram <- function (ngr, model_name) {
+  gram_blogs <- tokens_ngrams(clean_blogs, n=ngr)
+  print ("gram_blogs generated...")
+  gram_news <- tokens_ngrams(clean_news, n=ngr)
+  print ("gram_news generated...")
+  gram_twitter <- tokens_ngrams(clean_twitter, n=ngr)
+
+  
+  print("N Grams generated...")
+  
+  all_grams <- gram_news
+  rm(gram_news)
+ 
+  all_grams <- append(all_grams, gram_blogs)
+  rm(gram_blogs)
+  print("aqui tardo mil")
+  modelGram <- textstat_frequency(dfm(all_grams))
+  rm(all_grams)
+  gc()
+  print("fin aqui tardo")
+  characters.non.ASCII <- grep("characters.unlist", iconv(modelGram$feature, "latin1", "ASCII", sub="characters.unlist"))
+  noAscii <- modelGram$feature[characters.non.ASCII]
+  modelGram <- modelGram[!modelGram$feature %in% noAscii]
+  modelGram$rank <- NULL
+  modelGram$docfreq <- NULL
+  modelGram$group <- NULL
+  print("Model gram first")
+  
+  modelGramB <- textstat_frequency(dfm(gram_twitter))
+  characters.non.ASCII <- grep("characters.unlist", iconv(modelGramB$feature, "latin1", "ASCII", sub="characters.unlist"))
+  noAscii <- modelGramB$feature[characters.non.ASCII]
+  modelGramB <- modelGramB[!modelGramB$feature %in% noAscii]
+  rm(gram_twitter)
+  rm(characters.non.ASCII)
+  rm(noAscii)
+  gc()
+  modelGramB$rank <- NULL
+  modelGramB$docfreq <- NULL
+  modelGramB$group <- NULL
+
+  print("Model gram generated...")
+  setDT(modelGram, key="feature")
+  setDT(modelGramB, key="feature")
+  allGram <- merge(modelGram, modelGramB, all=TRUE)
+  
+  rm(modelGram)
+  rm(modelGramB)
+  gc()
+  
+  allGram$frequency.x <- allGram$frequency.x + allGram$frequency.y
+  allGram$frequency.y <- NULL
+  
+  
+  allGram <- allGram[frequency.x > 1]
+  print("AllGram generated...")
+  nColumns <- ngr - 1
+  allGram <- allGram %>% separate(feature, c(1:nColumns, "word"), sep="_", extra="drop") %>% unite("feature", c(1:nColumns))
+  sortGram <- allGram[order(-allGram$frequency.x), ]
+  saveRDS(sortGram, model_name)
+  return (sortGram)
+}
+
+
+
+#gram4Model <- makeNGram(4, "gram4.RDS")
+gram4Model <- readRDS("gram4.RDS")
+
+
+gram3Model <- makeNGram(3, "gram3.RDS")
+
+gram2Model <- makeNGram(2, "gram2.RDS")
+
+gram1Model <- makeNGram(1, "gram1.RDS")
+
+
+```
+
+```{r}
+
+library(data.table)
+gram4Model <- readRDS("gram4.RDS")
+gram3Model <- readRDS("gram3.RDS")
+gram2Model <- readRDS("gram2.RDS")
+gram1Model <- readRDS("gram1.RDS")
+
+
+get_no_exist_ngram_from_prefix <- function(data, unigram) {
+    no_in_trigram <- unigram[!(unigram$feature %in% data$word), ]$feature
+    return(no_in_trigram)
+}
+
+
+
+addDiscount <- function(data) {
+  data$discount = rep(1, nrow(data))
+  for(i in 5:2) {
+      r <- i
+      rPlus1 <- r + 1
+      
+      Nr <- nrow(data[frequency.x == r])
+      NrPlus1 <- nrow(data[frequency.x == rPlus1])
+
+      d <- min(1, (rPlus1 / r) * (NrPlus1 / Nr)) # assumption: 0 < d < 1
+      
+      # the beauty of "data.table"!
+      data[frequency.x == r, discount := d]
+  }
+  # Calculate the remaining probability (thanks to discounting...).
+  return (data)
+}
+
+models <- list(addDiscount(gram1Model[feature != '']), addDiscount(gram2Model[feature != '']), addDiscount(gram3Model[feature != '']), addDiscount(gram4Model[feature != '']))
+
+get_ngram_from_prefix <- function(prefix) {
+  ngram_array <- unlist(strsplit(prefix, "_"))
+  ngram_length <- length(ngram_array)
+  if (ngram_length > 3) {
+    prefix <- paste(ngram_array[(ngram_length-2):ngram_length],collapse= "_")
+    ngram_length <- length(ngram_array[(ngram_length-2):ngram_length])
+  }
+  
+  model <- models[[(ngram_length + 1)]]
+  return (model[feature==prefix])
+}
+
+
+
+get_beta_table <- function(data, prefix) {
+  if (nrow(data) > 0) return (data[, .(beta=calc_beta(frequency.x, discount)), by=feature])
+  return (data.table(feature=c(prefix), beta=c(1)))
+}
+
+
+
+
+calc_beta <- function(frequency, discount){
+    all_freq = sum(frequency)
+    return(1-sum((discount*frequency)/all_freq))
+}
+
+
+construct_observed_grams_probabilites <- function(obs_grams) {
+  all_freq <- sum(obs_grams$frequency.x)
+  obs_grams$prob <- (obs_grams$frequency.x * obs_grams$discount) / all_freq
+  return (obs_grams)
+} 
+
+
+get_new_prefix <- function(prefix) {
+  newPrefix <- unlist(strsplit(prefix, "_"))
+  newPrefix <- newPrefix[2:length(newPrefix)]
+  return (paste(newPrefix, collapse="_"))
+}
+
+prediction <- function(prefix) {
+  ngram_array <- unlist(strsplit(prefix, "_"))
+  ngram_length <- length(ngram_array)
+  if (ngram_length < 3) return (NULL)
+  prefix <- paste(ngram_array[(length(ngram_array) - 2):length(ngram_array)], collapse="_")
+  observed_4_grams <- get_ngram_from_prefix(prefix)
+  observed_4_grams_probs <- construct_observed_grams_probabilites(observed_4_grams)
+  
+  beta_4 <- get_beta_table(observed_4_grams_probs, prefix) 
+  
+  observed_words <- observed_4_grams_probs$word
+  unobs_4 <- c()
+  if (length(observed_words) > 0) { unobs_4 <-gram1Model[!feature %in% observed_words]$feature }
+  
+  newPrefix <- get_new_prefix(prefix)
+  
+  observed_3_grams <- get_ngram_from_prefix(newPrefix)
+  if (length(unobs_4) > 0) { observed_3_grams <- observed_3_grams[word %in% unobs_4] }
+  observed_3_grams_probs <- construct_observed_grams_probabilites(observed_3_grams)
+  
+  observed_words <- append(observed_words, observed_3_grams_probs$word)
+  
+  all_3_probs <- sum(observed_3_grams_probs$prob)
+ 
+  to_4_gram <- observed_3_grams_probs
+  to_4_gram$feature <- prefix
+  to_4_gram$prob <- (beta_4[feature == prefix]$beta / all_3_probs) * to_4_gram$prob
+  
+  beta_3 <- get_beta_table(observed_3_grams_probs, newPrefix)
+  
+  unobs_3 <- c()
+  if (length(observed_words) > 0) { unobs_3 <- gram1Model[!feature %in% observed_words]$feature }
+  
+  oldPrefix <- newPrefix
+  newPrefix <- get_new_prefix(newPrefix)
+  observed_2_grams <- get_ngram_from_prefix(newPrefix)
+  if (length(unobs_3) > 0) { observed_2_grams <- observed_2_grams[word %in% unobs_3] }
+  observed_2_grams_probs <- construct_observed_grams_probabilites(observed_2_grams)
+  
+  observed_words <- append(observed_words, observed_2_grams_probs$word)
+  
+  all_2_probs <- sum(observed_2_grams_probs$prob)
+  
+  to_3_gram <- observed_2_grams_probs
+  to_3_gram$feature <- prefix
+  to_3_gram$prob <- (beta_3[feature == oldPrefix]$beta / all_2_probs) * to_3_gram$prob
+  beta_2 <- get_beta_table(observed_2_grams_probs, newPrefix)
+  
+  unobs_2 <- c()
+  if (length(observed_words) > 0) { unobs_2 <- gram1Model[!feature %in% observed_words]$feature }
+  
+  final_gram <- models[[1]]
+  if (length(unobs_2) > 0) { final_gram <- final_gram[feature %in% unobs_2] }
+  final_gram <- construct_observed_grams_probabilites(final_gram)
+  
+  all_1_probs <- sum(final_gram$prob)
+  
+  to_2_gram <- final_gram
+  to_2_gram$word <- final_gram$feature
+  to_2_gram$'0' <- NULL
+  to_2_gram$feature <- prefix
+  to_2_gram$prob <- (beta_2[feature == newPrefix]$beta / all_1_probs) * to_2_gram$prob
+  to_2_gram <- to_2_gram[order(-to_2_gram$prob), ]
+
+  result <- rbind(observed_4_grams_probs[order(-observed_4_grams_probs$prob), ], to_4_gram[order(-to_4_gram$prob), ], 
+                to_3_gram[order(-to_4_gram$prob), ], to_2_gram)
+  
+  
+  return (result[order(-result$prob)][1:3])
+}
+
+```
+
+```{r}
+
+library(knitr)
+library(caret)
+library(quanteda)
+en_blogs <- readLines("en_US.blogs.txt")
+en_news <- readLines("en_US.news.txt")
+en_twitter <- readLines("en_US.twitter.txt")
+
+generate_train_test <- function(data) {
+  set.seed(12345)
+  n_els <- length(data)
+  trainIndex <- sample(1:n_els, n_els * 0.99, replace = FALSE)
+  train <- data[trainIndex]
+  test <- data[-trainIndex]
+  return (list(train=train, test=test))
+}
+
+
+blogs_data <- generate_train_test(en_blogs)
+
+news_data <- generate_train_test(en_news)
+
+twitter_data <- generate_train_test(en_twitter)
+
+
+
+clean_blog_test <- clean_text(blogs_data$test)
+names(clean_blog_test) <- paste("blogs", seq(1:length(clean_blog_test)), sep="")
+clean_news_test <- clean_text(news_data$test)
+names(clean_news_test) <- paste("news", seq(1:length(clean_news_test)), sep="")
+clean_twitter_test <- clean_text(twitter_data$test)
+names(clean_twitter_test) <- paste("twitter", seq(1:length(clean_twitter_test)), sep="")
+#all_test <- c(clean_blog_test, clean_news_test, clean_twitter_test)
+
+rm(en_blogs)
+rm(en_news)
+rm(en_twitter)
+rm(blogs_data)
+rm(news_data)
+rm(twitter_data)
+
+
+all_test_set <- c(clean_blog_test, clean_news_test, clean_twitter_test)
+rm(clean_blog_test)
+rm(clean_news_test)
+rm(clean_twitter_test)
+set.seed(1234)
+gram_select_test <- sample(all_test_set, 20000, replace = FALSE)
+gram_test <- tokens_ngrams(gram_select_test, 4)
+rm(all_test_set)
+rm()
+gc()
+
+
+
+library(tidyverse)
+test_set <- gram_test %>% reduce(c) %>% unique
+
+library(data.table)
+test_table = data.table(feature=test_set)
+
+test_table <- test_table %>% separate(feature, c(1, 2, 3, "word"), sep="_", extra="drop") %>% unite("feature", c(1,2,3))
+
+
+saveRDS(test_table, "testSet.RDS")
+
+
+evaluation <- function(data) {
+  hit <- 0
+  n_ej <- nrow(data)
+  print (paste("num ejemplos: ", n_ej))
+  for (i in 1:n_ej) {
+    words <- prediction(data[i]$feature)
+
+    if (data[i]$word %in% words$word) {
+      print("predictions...")
+      print(words$word)
+      print("test...")
+      print(data[i]$word)
+      print("=====================================================")
+      hit <- hit  + 1
+    }
+    if ((i %% 10) == 0) print (paste("Procesados ",i, "...", hit, " hits."))
+  }
+  acc <- (hit / n_ej)
+}
+
+
+set.seed(1234)
+subset_test_table <- test_table[sample(1:nrow(test_table), 10000, replace = FALSE)]
+
+evaluation(subset_test_table)
+
+```

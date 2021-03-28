@@ -1,0 +1,61 @@
+---
+title: "Word prediction using ngrams"
+author: "Francisco Javier Raya"
+date: "3/30/2021"
+output: ioslides_presentation
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+I have developed a shiny app that predicts next word using and ngram model.
+
+I have used a SwiftKey corpus. In this corpus I can find blogs, news and twitter data.
+
+There are a lot of text, so I have reduced corpus size and filtering some words.
+
+* Url of the shiny app: [https://fjraya.shinyapps.io/word_pred/]
+* Url of github: [https://github.com/fjraya/final_ds_project]
+
+## How have I cleaned the data?
+
+
+* I have used quanteda library
+* I have split text into sentences to not mix words from differents sentences
+* I have removed punctuation, separators, convert all the text to lower case, filtering non ascii words and, finally, remove profanity words
+* I haven't remove stop words because there are very present in language and is useful predict them and use them to predict more accurate.
+* I have built ngrams models with 1, 2, 3 and 4 words. (see [https://en.wikipedia.org/wiki/N-gram] for more information)
+
+
+## Algorithm used
+
+* I have used [Katzs Backoff](https://en.wikipedia.org/wiki/Katz%27s_back-off_model) with precalculated [Good Turing discount](https://en.wikipedia.org/wiki/Good%E2%80%93Turing_frequency_estimation) stored in every ngram column.
+* Using this algorithm, I manage unseen ngram words.
+* When no ngram matches with input, I return most frequent word.
+* It's important to say that all the process starts when I put 3 or more words in input text. For two or one word, this app doesn't give any prediction.
+
+
+
+## Size and time reduction and evaluation
+
+* I have deleted ngrams that occurs less than 2 times.
+* I have studied word coverage and I only consider words that covers 90% of all frequencies.
+* I have splitted corpus in train and test set (3000 trigrams) to evaluate different models with accuracy.
+
+```{r table, echo=FALSE, message=FALSE, warning=FALSE}
+library(data.table)
+results <- data.table(model=c("baseline", "95% cover", "90% cover", "70% cover"), size=c("43", "29", "27", "20"), time=c("70", "9", "4", "2"), accuracy=c("0.21", "0.2", "0.199", "0.192"))
+
+names(results) <- c("model", "size(Mb)", "time(min)", "accuracy")
+
+head(results)
+                      
+                      
+```
+
+I have chosen model with 70% of coverage. Because is x2 faster and his size is lower. I think it's a good decision if I want to put this model in mobile or other devices with low resources. 
+
+
